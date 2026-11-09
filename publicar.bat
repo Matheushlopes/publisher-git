@@ -2,11 +2,15 @@
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul
 
-REM Os tres arquivos devem ficar juntos na raiz do projeto.
+REM Scripts e repositorio.conf na raiz; example.repositorio.conf e modelo versionavel.
 cd /d "%~dp0" || goto :erro
-set "ARQUIVO_CONFIG=%~dp0repositore.conf"
+set "ARQUIVO_CONFIG=%~dp0repositorio.conf"
+if not exist "%ARQUIVO_CONFIG%" if exist "%~dp0repositore.conf" (
+    copy /y "%~dp0repositore.conf" "%ARQUIVO_CONFIG%" >nul || goto :erro
+    echo Configuracao antiga copiada para repositorio.conf.
+)
 if not exist "%ARQUIVO_CONFIG%" (
-    echo ERRO: Arquivo repositore.conf nao encontrado ao lado do script.
+    echo ERRO: Crie repositorio.conf a partir de example.repositorio.conf.
     exit /b 1
 )
 set "URL_REPOSITORIO="
@@ -64,11 +68,27 @@ if errorlevel 1 (
 echo Remoto: %URL_REPOSITORIO%
 echo Branch: %BRANCH%
 
-REM 4) Apresenta alterações, inclusive arquivos novos e removidos.
+REM 4) Insere exclusoes no .gitignore sem sobrescrever as regras do projeto.
+if not exist ".gitignore" >".gitignore" echo # Configuracoes locais do publicador GitHub
+findstr /L /X /C:"/repositorio.conf" ".gitignore" >nul 2>&1 || >>".gitignore" echo /repositorio.conf
+findstr /L /X /C:"/repositore.conf" ".gitignore" >nul 2>&1 || >>".gitignore" echo /repositore.conf
+
 echo.
 echo [3/7] Arquivos alterados antes de adicionar:
 git -c core.quotepath=false status --short
+REM Prepara todas as alteracoes; arquivos privados serao desindexados abaixo.
 git add -A || goto :erro
+REM Se antes foram rastreados, remove do indice mas preserva no disco.
+git ls-files --error-unmatch -- "repositorio.conf" >nul 2>&1
+if not errorlevel 1 (
+    echo Removendo repositorio.conf do Git, mantendo copia local...
+    git rm --cached -f -- "repositorio.conf" || goto :erro
+)
+git ls-files --error-unmatch -- "repositore.conf" >nul 2>&1
+if not errorlevel 1 (
+    echo Removendo repositore.conf do Git, mantendo copia local...
+    git rm --cached -f -- "repositore.conf" || goto :erro
+)
 
 echo.
 echo [4/7] Mudancas preparadas para o commit:
@@ -83,7 +103,8 @@ for /f "delims=" %%F in ('git -c core.quotepath=false diff --cached --name-only 
 if /i "%MOSTRAR_DIFF_COMPLETO%"=="sim" (
     echo.
     echo Diferencas linha a linha:
-    git --no-pager -c core.quotepath=false diff --cached --no-ext-diff
+    REM Nao exibe conteudo ou exclusao do arquivo privado.
+    git --no-pager -c core.quotepath=false diff --cached --no-ext-diff -- . ":(exclude)repositorio.conf" ":(exclude)repositore.conf"
 )
 
 REM 5) Cria commit com prefixo Conventional Commits.

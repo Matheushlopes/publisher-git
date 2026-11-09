@@ -1,6 +1,6 @@
 # GitHub Auto Publisher
 
-Publicador automático de projetos Git para **Linux, macOS e Windows**. Um arquivo de configuração compartilhado (`repositore.conf`) define o repositório de destino, a branch e o nível de detalhe do relatório.
+Publicador automático de projetos Git para **Linux, macOS e Windows**. Um arquivo de configuração compartilhado (`repositorio.conf`) define o repositório de destino, a branch e o nível de detalhe do relatório.
 
 O objetivo é executar o fluxo básico de publicação com um comando: **verificar alterações → preparar arquivos → criar commit automático → sincronizar com o remoto → enviar ao GitHub**.
 
@@ -18,20 +18,25 @@ O objetivo é executar o fluxo básico de publicação com um comando: **verific
 - Executa `git pull --rebase` quando a branch remota já existe.
 - Publica com `git push -u origin <branch>`, **sem `--force`**.
 - Interrompe o fluxo em caso de conflito ou falha de autenticação.
+- Mantém `repositorio.conf` fora dos commits, inclusive se já estava versionado (remove-o somente do índice Git, preservando a cópia local).
+- Mantém `example.repositorio.conf` versionável como exemplo seguro para outros desenvolvedores.
+- Atualiza o `.gitignore` existente sem apagar as regras do projeto.
 - Bloqueia o commit automático de alguns arquivos sensíveis comuns, como `.env`, `.pem`, `.p12` e chaves privadas conhecidas.
 
 ## Arquivos
 
 ```text
 meu-projeto/
-├── repositore.conf       # Configuração compartilhada
-├── publicar.sh           # Linux / macOS / Git Bash
-├── publicar.bat          # Windows (Prompt de Comando)
-├── README.md             # Este guia
-└── ...                   # Código do seu projeto
+├── example.repositorio.conf  # Modelo publico (versionavel)
+├── repositorio.conf          # Configuracao real (apenas local)
+├── .gitignore                # Impede futuros commits do .conf
+├── publicar.sh               # Linux / macOS / Git Bash
+├── publicar.bat              # Windows (CMD)
+├── README.md                 # Este guia
+└── ...                       # Codigo do seu projeto
 ```
 
-**Coloque os scripts e `repositore.conf` na raiz do projeto.** Os scripts usam sua própria pasta como diretório de trabalho.
+**Coloque os scripts e o arquivo local `repositorio.conf` na raiz do projeto.** Os scripts usam sua própria pasta como diretório de trabalho.
 
 ## Pré-requisitos
 
@@ -53,9 +58,23 @@ git config --get user.name
 git config --get user.email
 ```
 
-## Configuração — `repositore.conf`
+## Configuração — `repositorio.conf`
 
-Edite **somente** `repositore.conf` para trocar o repositório ou a branch:
+Primeiro, copie o modelo versionável para criar sua configuração privada:
+
+**Linux / macOS:**
+
+```bash
+cp example.repositorio.conf repositorio.conf
+```
+
+**Windows (CMD):**
+
+```bat
+copy example.repositorio.conf repositorio.conf
+```
+
+Depois, edite **somente** `repositorio.conf` para trocar o repositório ou a branch:
 
 ```ini
 # Configuração do publicador automático GitHub.
@@ -78,7 +97,7 @@ Também é possível usar uma URL SSH, se o acesso por chave SSH estiver configu
 URL_REPOSITORIO="git@github.com:usuario/projeto.git"
 ```
 
-**Atenção:** mantenha o nome **`repositore.conf`** exatamente assim; é o nome que os dois scripts procuram. As configurações seguem o formato simples `CHAVE="valor"`; não utilize comandos de shell nem espaços ao redor de `=`.
+**Atenção:** mantenha o nome **`repositorio.conf`** exatamente assim; é o nome que os dois scripts procuram. O nome antigo `repositore.conf` também é reconhecido e migrado automaticamente. As configurações seguem o formato simples `CHAVE="valor"`; não utilize comandos de shell nem espaços ao redor de `=`.
 
 ## Como usar
 
@@ -121,6 +140,14 @@ Também é possível dar duplo clique no arquivo, mas o terminal pode fechar ao 
 
 O **commit local ocorre antes do pull**. Isso evita tentar executar um rebase com alterações locais ainda não registradas. Quando a branch remota não existe, o script pula o pull e tenta criá-la com o primeiro push.
 
+### Configuração privada e remoção do rastreamento
+
+`repositorio.conf` e o nome antigo `repositore.conf` são ignorados pelo Git. O script adiciona essas regras ao `.gitignore` do projeto automaticamente. Caso algum desses arquivos já tenha sido rastreado, o script o retira do índice antes de criar o commit; novos arquivos `.conf` são ignorados pelo Git.
+
+**Se um deles já foi commitado:** o script executa `git rm --cached -f` para retirá-lo do próximo estado do repositório, **sem apagar seu arquivo local**. O novo commit registra a exclusão do arquivo. A versão antiga **permanece no histórico do Git/GitHub**; para apagar dados já expostos seria necessário limpar o histórico separadamente e, caso houvesse credenciais, revogá-las.
+
+**Não adicione tokens, senhas ou chaves privadas à URL** em `repositorio.conf`. Para autenticar, utilize o gerenciador de credenciais do Git ou SSH.
+
 ### Exemplo de saída
 
 ```text
@@ -161,6 +188,7 @@ Quando não há modificações locais, o script não cria commit vazio: ele aind
 ## Segurança e boas práticas
 
 - **Revise o relatório de mudanças** antes de compartilhar alterações importantes. O script é automático e não pede confirmação antes de publicar.
+- O script acrescenta `/repositorio.conf` e `/repositore.conf` ao `.gitignore` existente (ou cria o arquivo se não houver). O modelo `example.repositorio.conf` pode ser publicado normalmente.
 - Adicione um `.gitignore` adequado ao seu projeto, especialmente para `.env`, `.venv/`, `node_modules/`, bancos locais, logs e artefatos de build.
 - A verificação de segredos bloqueia **alguns nomes de arquivos conhecidos**, mas **não examina o conteúdo** em busca de senhas, tokens ou chaves. Isso **não substitui** revisão de código e ferramentas de detecção de segredos.
 - Se detectar um arquivo sensível, o script interrompe a publicação, mas o arquivo pode continuar no *stage*. Remova-o com `git restore --staged -- caminho/do/arquivo` e atualize o `.gitignore`.
@@ -170,6 +198,8 @@ Quando não há modificações locais, o script não cria commit vazio: ele aind
 Exemplo mínimo de `.gitignore` para um projeto Python:
 
 ```gitignore
+/repositorio.conf
+/repositore.conf
 .env
 .env.*
 !.env.example
@@ -193,14 +223,14 @@ Instale o Git e confirme com `git --version`. No Windows, instale o Git for Wind
 <details>
 <summary><strong>URL ou branch inválida</strong></summary>
 
-Confira `URL_REPOSITORIO` e `BRANCH` no `repositore.conf`. A URL precisa apontar para um repositório existente e ao qual você tenha acesso.
+Confira `URL_REPOSITORIO` e `BRANCH` no `repositorio.conf`. A URL precisa apontar para um repositório existente e ao qual você tenha acesso.
 
 </details>
 
 <details>
 <summary><strong>O remoto origin é diferente</strong></summary>
 
-O script interrompe o fluxo para evitar publicar no destino errado. Verifique `git remote -v`. Se quiser alterar o destino conscientemente, execute manualmente `git remote set-url origin NOVA_URL` e mantenha a mesma URL em `repositore.conf`.
+O script interrompe o fluxo para evitar publicar no destino errado. Verifique `git remote -v`. Se quiser alterar o destino conscientemente, execute manualmente `git remote set-url origin NOVA_URL` e mantenha a mesma URL em `repositorio.conf`.
 
 </details>
 
@@ -233,7 +263,7 @@ Se o repositório local e o remoto foram criados **com históricos iniciais inde
 <details>
 <summary><strong>Falha no push / permissão negada</strong></summary>
 
-Verifique a autenticação, o acesso de escrita ao repositório e eventuais regras de proteção da branch no GitHub. Um token ou chave SSH **não deve** ser colocado dentro de `repositore.conf`.
+Verifique a autenticação, o acesso de escrita ao repositório e eventuais regras de proteção da branch no GitHub. Um token ou chave SSH **não deve** ser colocado dentro de `repositorio.conf`.
 
 </details>
 

@@ -4,14 +4,19 @@ set -Eeuo pipefail
 
 # O projeto e o arquivo de configuração ficam na mesma pasta do script.
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
-ARQUIVO_CONFIG="./repositore.conf"
+ARQUIVO_CONFIG="./repositorio.conf"
+# Migra automaticamente o nome usado nas versoes anteriores.
+if [[ ! -f "$ARQUIVO_CONFIG" && -f "./repositore.conf" ]]; then
+  cp -- "./repositore.conf" "$ARQUIVO_CONFIG"
+  printf 'Configuracao antiga copiada para repositorio.conf.\n'
+fi
 
 log()   { printf '\n\033[1;36m%s\033[0m\n' "$*"; }
 erro()  { printf '\nERRO: %s\n' "$*" >&2; exit 1; }
 
 # Lê um arquivo simples KEY=VALUE, também compatível com o Windows.
 # Não usamos 'source' para não executar comandos eventualmente presentes no .conf.
-[[ -f "$ARQUIVO_CONFIG" ]] || erro "Arquivo repositore.conf não encontrado ao lado do script."
+[[ -f "$ARQUIVO_CONFIG" ]] || erro "Arquivo repositorio.conf nao encontrado. Copie example.repositorio.conf e edite a URL."
 URL_REPOSITORIO=""
 BRANCH=""
 MOSTRAR_DIFF_COMPLETO="nao"
@@ -67,11 +72,29 @@ else
 fi
 printf 'Remoto: %s\nBranch: %s\n' "$URL_REPOSITORIO" "$BRANCH"
 
-# 4) Lista alterações antes de adicionar; -A inclui modificações e exclusões.
+# 4) Garante que configuracoes locais nao sejam versionadas.
+# Adiciona as regras ao .gitignore sem apagar regras existentes do projeto.
+if [[ ! -f .gitignore ]]; then
+  printf '# Configuracoes locais do publicador GitHub\n' > .gitignore
+fi
+for padrao in '/repositorio.conf' '/repositore.conf'; do
+  grep -Fqx -- "$padrao" .gitignore || printf '%s\n' "$padrao" >> .gitignore
+done
+
 log "3/7 Arquivos alterados (antes de adicionar)..."
 git -c core.quotepath=false status --short
 
+# O .gitignore evita adiciona-las; se ja rastreadas, removemos do indice abaixo.
 git add -A
+
+# Caso alguma configuracao ja esteja rastreada, remove SOMENTE do indice.
+# Isso cria um commit de remocao, sem apagar o arquivo do computador.
+for privado in repositorio.conf repositore.conf; do
+  if git ls-files --error-unmatch -- "$privado" >/dev/null 2>&1; then
+    log "Removendo '$privado' do controle de versao (mantendo arquivo local)..."
+    git rm --cached -f -- "$privado"
+  fi
+done
 
 log "4/7 Mudanças preparadas para o commit..."
 git -c core.quotepath=false diff --cached --name-status
@@ -91,7 +114,9 @@ done < <(git -c core.quotepath=false diff --cached --name-only --diff-filter=ACM
 
 if [[ "$MOSTRAR_DIFF_COMPLETO" == "sim" ]]; then
   log "Diferenças linha a linha (arquivos de texto)..."
-  git --no-pager -c core.quotepath=false diff --cached --no-ext-diff
+  # Nunca imprime o conteudo das configuracoes privadas, nem suas exclusoes.
+  git --no-pager -c core.quotepath=false diff --cached --no-ext-diff -- . \
+    ':(exclude)repositorio.conf' ':(exclude)repositore.conf'
 fi
 
 # 5) Cria mensagem Conventional Commits com base na operação dos arquivos.
